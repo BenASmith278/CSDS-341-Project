@@ -1,3 +1,7 @@
+-- create index on score
+GO
+CREATE INDEX score_index ON Score(score);
+
 -- Transfer athlete stored procedure
 GO
 CREATE or ALTER PROCEDURE TransferAthlete
