@@ -226,53 +226,68 @@ public class storedQueries {
         }
     }
 
-    public static void calRaceResult(int raceId, int meetId) {
+    public static void calRaceResult(int eventId) {
         // SQL query to call the stored procedure
-        String sql = "{CALL CalculateScore(?, ?, ?, ?, ?)}";
+        String findSchools = "{CALL FindSchoolsInEvent(?)}";
+        String getAllScores = "{CALL GetScores(?)}";
 
-        try {
-            CallableStatement stmt = prepareCallableStatement(conn, sql);
+        try (Connection conn = DriverManager.getConnection(connectionURL.getConnectionString())) {
+            conn.setAutoCommit(false);
 
+            try (CallableStatement find = conn.prepareCall(findSchools);
+                    CallableStatement scores = conn.prepareCall(getAllScores);) {
+                int max = 0;
+                String winner = "";
+                // Set the parameters for the stored procedures
+                find.setInt(1, eventId);
+                ResultSet schools = find.executeQuery();
+                while (schools.next()) {
+                    int schoolId = schools.getInt(1);
+                    calculateResult(eventId, schoolId);
+                }
+
+                scores.setInt(1, eventId);
+                ResultSet results = scores.executeQuery();
+                while (results.next()) {
+                    String schoolName = results.getString("SchoolName");
+                    int score = results.getInt("Score");
+                    if (score > max) {
+                        max = score;
+                        winner = schoolName;
+                    }
+
+                    System.out.println("School: " + schoolName + ", Score: " + score);
+                }
+
+                if (max > 0) {
+                    System.out.println("The winner is: " + winner + " with " + max + " points");
+                } else {
+                    System.out.println("No scoring schools in the event.");
+                }
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                System.out.println("An error occurred: " + e.getMessage());
+                e.printStackTrace();
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void calculateResult(int eventId, int schoolId) {
+        // SQL query to call the stored procedure
+        String sql = "{CALL CalculateScore(?, ?, ?)}";
+
+        try (CallableStatement stmt = prepareCallableStatement(conn, sql)) {
             // Set the parameters for the stored procedure
-            stmt.setInt(1, raceId);
-            stmt.setInt(2, meetId);
-
-            // Register output parameters
-            stmt.registerOutParameter(3, Types.INTEGER); // school_id
-            stmt.registerOutParameter(4, Types.VARCHAR); // school_name
-            stmt.registerOutParameter(5, Types.INTEGER); // score
+            stmt.setInt(1, eventId);
+            stmt.setInt(2, schoolId);
+            stmt.registerOutParameter(3, Types.INTEGER);
 
             // Execute the stored procedure
-            boolean hasResults = stmt.execute();
-
-            // Check if there are results, including PRINT statements
-            do {
-                if (hasResults) {
-                    try (ResultSet rs = stmt.getResultSet()) {
-                        while (rs.next()) {
-                            // Handle any result set if necessary
-                        }
-                    }
-                } else {
-                    int updateCount = stmt.getUpdateCount();
-                    if (updateCount == -1) {
-                        // No more results
-                        break;
-                    }
-                }
-                hasResults = stmt.getMoreResults();
-            } while (true);
-
-            // Retrieve output parameters
-            int schoolId = stmt.getInt(3);
-            String schoolName = stmt.getString(4);
-            int score = stmt.getInt(5);
-
-            // Print or use the output parameters as needed
-            System.out.println("School ID: " + schoolId);
-            System.out.println("School Name: " + schoolName);
-            System.out.println("Score: " + score);
-
+            stmt.execute();
+            stmt.close();
         } catch (SQLException e) {
             e.printStackTrace();
         }
