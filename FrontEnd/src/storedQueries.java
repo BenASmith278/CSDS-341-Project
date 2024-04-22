@@ -182,7 +182,7 @@ public class storedQueries {
                     System.out.println("School: " + schoolId + ", Score: " + score);
                 }
 
-                if (min > 14) {
+                if (min > 14 && min != Integer.MAX_VALUE) {
                     System.out.println("The winner is: " + winner + " with " + min + " points");
                 } else {
                     System.out.println("No scoring schools in the event.");
@@ -200,7 +200,7 @@ public class storedQueries {
 
     public static void calculateResult(int eventId, int schoolId) {
         // SQL query to call the stored procedure
-        String sql = "{CALL CalculateScore(?, ?, ?)}";
+        String sql = "{CALL CalculateScore(?, ?, ?, ?)}";
 
         try (Connection conn = DriverManager.getConnection(connectionURL.getConnectionString());
             CallableStatement stmt = conn.prepareCall(sql);) {
@@ -208,7 +208,7 @@ public class storedQueries {
             stmt.setInt(1, eventId);
             stmt.setInt(2, schoolId);
             stmt.registerOutParameter(3, Types.INTEGER);
-
+            stmt.registerOutParameter(4, Types.VARCHAR);
             // Execute the stored procedure
             stmt.execute();
             stmt.close();
