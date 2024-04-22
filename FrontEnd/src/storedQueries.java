@@ -203,7 +203,7 @@ public class storedQueries {
         String sql = "{CALL CalculateScore(?, ?, ?, ?)}";
 
         try (Connection conn = DriverManager.getConnection(connectionURL.getConnectionString());
-            CallableStatement stmt = conn.prepareCall(sql);) {
+                CallableStatement stmt = conn.prepareCall(sql);) {
             // Set the parameters for the stored procedure
             stmt.setInt(1, eventId);
             stmt.setInt(2, schoolId);

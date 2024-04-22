@@ -142,7 +142,7 @@ GO
 
 -- find all schools in an event
 GO
-CREATE PROCEDURE FindSchoolsInEvent
+CREATE or ALTER PROCEDURE FindSchoolsInEvent
     @event_id INT
 AS
 BEGIN
@@ -157,79 +157,77 @@ END;
 -- calculate the score for an event and school
 GO
 CREATE OR ALTER PROCEDURE CalculateScore
-	@event_id INT,
-	@school_id INT,
-	@score INT OUTPUT
+    @event_id INT,
+    @school_id INT,
+    @score INT OUTPUT,
+    @message NVARCHAR(500) OUTPUT
 AS
 BEGIN
-	BEGIN TRANSACTION;
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
 
-	-- Check meet status
-	DECLARE @status VARCHAR(50);
-	SELECT @status = m.status FROM Event e
+    -- Check meet status
+    DECLARE @status VARCHAR(50);
+    SELECT @status = m.status FROM Event e
     INNER JOIN Meet m ON e.meet_id = m.id
     WHERE e.event_id = @event_id;
-    
-	IF @status != 'completed'
+
+    IF @status != 'completed'
+    BEGIN
+        SET @message = 'Cannot calculate score of an unfinished race.';
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END
+
+	IF EXISTS (SELECT score FROM Score WHERE event_id = @event_id AND school_id = @school_id)
 	BEGIN
-    	ROLLBACK TRANSACTION;
-    	PRINT 'Cannot calculate score of an unfinished race.';
-    	RETURN;
+		SELECT @score = score FROM Score WHERE event_id = @event_id AND school_id = @school_id;
+		SET @message = 'Score already exists.'
+		ROLLBACK TRANSACTION;
+		RETURN;
 	END;
-	ELSE
-	BEGIN
-        -- check if score has already been calculated
-    	DECLARE @rowCount INT;
 
-    	IF EXISTS (SELECT score FROM Score WHERE event_id = @event_id AND school_id = @school_id)
-    	BEGIN
-        	SELECT @score = score FROM Score WHERE event_id = @event_id AND school_id = @school_id;
-   		    PRINT 'Score already exists';
-   		    ROLLBACK TRANSACTION;
-   		    RETURN;
-    	END;
+    -- Prepare a table variable to hold top finishers
+    DECLARE @finishers TABLE (place INT);
 
-    	-- calculate score
-    	ELSE
-    	BEGIN
-            -- set score null if less than 5 athletes finish
-   		    WITH finishers (place) AS (
-            	-- get top five results for the event and school
-            	SELECT r.place
-            	FROM Result r
-            	INNER JOIN Athlete a ON r.athlete_id = a.id
-            	INNER JOIN School s ON a.school_id = s.id
-            	WHERE r.event_id = @event_id AND s.id = @school_id
-   		)
-        	SELECT @rowCount = COUNT(*)
-   		FROM finishers
+    -- Populate the table variable with the top 5 results
+    INSERT INTO @finishers (place)
+    SELECT TOP(5) r.place
+    FROM Result r
+    INNER JOIN Athlete a ON r.athlete_id = a.id
+    WHERE r.event_id = @event_id AND a.school_id = @school_id
+    ORDER BY r.time ASC;
 
-        	IF @rowCount < 5
-            	SET @score = null;
-        	ELSE
-   			WITH topFiveScores (place) AS (
-   				-- get top five results for the event and school
-   				SELECT TOP(5) r.place
-   				FROM Result r
-   				INNER JOIN Athlete a ON r.athlete_id = a.id
-   				INNER JOIN School s ON a.school_id = s.id
-   				WHERE r.event_id = @event_id AND s.id = @school_id
-   				ORDER BY r.time ASC
-   			)
-            	SELECT @score = SUM(place)
-            	FROM topFiveScores;
+    -- Check if enough finishers are available
+    DECLARE @rowCount INT;
+    SELECT @rowCount = COUNT(*) FROM @finishers;
 
-        	-- insert new row to scores table with calculated score
-        	INSERT INTO Score(event_id, school_id, score)
-        	VALUES (@event_id, @school_id, @score);
-   		    COMMIT TRANSACTION;
-    	END;
-    END;
+    IF @rowCount < 5
+    BEGIN
+        SET @score = NULL;  -- Not enough finishers to calculate score
+        SET @message = 'Not enough athletes finished the event.';
+    END
+    ELSE
+    BEGIN
+        -- Calculate score from the places of finishers
+        SELECT @score = SUM(place) FROM @finishers;
+
+        -- Insert the calculated score into the Score table
+        INSERT INTO Score (event_id, school_id, score)
+        VALUES (@event_id, @school_id, @score);
+
+        SET @message = 'Score calculated and recorded successfully.';
+    END
+
+    COMMIT TRANSACTION;
 END;
-
--- get all scores for an event
 GO
-CREATE PROCEDURE GetScores
+
+GO
+
+
+
+CREATE or ALTER PROCEDURE GetScores
 	@event_id INT
 AS
 BEGIN
@@ -237,6 +235,8 @@ BEGIN
 	FROM Score s
 	WHERE s.event_id = @event_id;
 END;
+GO
+
 
 -- find top performers for a season
 GO
@@ -263,25 +263,28 @@ BEGIN
         ORDER BY res.time ASC;
     COMMIT TRANSACTION;
 END;
+GO
+
 
 -- Create meet stored procedure
-GO
 CREATE OR ALTER PROCEDURE CreateMeet
     @host_school_id INT,
     @meet_name VARCHAR(255),
     @start_date DATE,
     @start_time TIME,
-    @season VARCHAR(20),
+    @season INT,
     @status VARCHAR(50),
     @output_message VARCHAR(500) OUTPUT  -- Output parameter to return the message
 AS
 BEGIN
     SET NOCOUNT ON;
+    BEGIN TRANSACTION; -- Start the transaction
 
     -- Validate date
     IF @start_date <= CAST(GETDATE() AS DATE)
     BEGIN
         SET @output_message = 'Error: Start date must be in the future.';
+        ROLLBACK TRANSACTION;
         RETURN;
     END
 
@@ -289,70 +292,50 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM School WHERE id = @host_school_id)
     BEGIN
         SET @output_message = 'Error: Host school does not exist.';
+        ROLLBACK TRANSACTION;
         RETURN;
     END
 
     -- Attempt to insert the new meet
-    BEGIN TRY
-        INSERT INTO Meet (host, name, start_date, start_time, season, status)
-        VALUES (@host_school_id, @meet_name, @start_date, @start_time, @season, @status);
-        SET @output_message = 'Meet created successfully.';
-    END TRY
-    BEGIN CATCH
-        IF ERROR_NUMBER() = 2627  -- Handling primary key or unique constraint violation
-        BEGIN
-            SET @output_message = 'Error: A meet with the same details already exists.';
-        END ELSE
-        BEGIN
-            SET @output_message = ERROR_MESSAGE();  -- Capture SQL Server error message
-        END
-    END CATCH
-END;
-GO
+    INSERT INTO Meet (host, name, start_date, start_time, season, status)
+    VALUES (@host_school_id, @meet_name, @start_date, @start_time, @season, @status);
 
-CREATE OR ALTER PROCEDURE FindKTopPerformers
-    @season VARCHAR(255), 
-    @race_id INT,
-    @k INT
-AS
-BEGIN
-    SELECT TOP (@k) 
-        CONCAT(a.fname, ' ', a.lname) AS AthleteName,
-        r.time AS ResultTime
-    FROM 
-        Meet m
-    INNER JOIN 
-        Event e ON m.id = e.meet_id
-    INNER JOIN 
-        Result r ON r.event_id = e.event_id
-    INNER JOIN 
-        Athlete a ON r.athlete_id = a.id
-    WHERE 
-        m.season = @season 
-        AND e.race_id = @race_id
-    ORDER BY 
-        r.time ASC;
+    SET @output_message = 'Meet created successfully.';
+    COMMIT TRANSACTION; -- Commit the transaction
 END;
 GO
-CREATE OR ALTER PROCEDURE DeleteResult
-    @athlete_id INT,
-    @event_id INT
+--Delete Athlete and all corresponding races (if an athlete happens to be banned from competition)
+CREATE OR ALTER PROCEDURE DeleteAthleteAndResults
+    @AthleteID INT,
+    @output_message NVARCHAR(500) OUTPUT  -- Output parameter to return the message
 AS
 BEGIN
-    BEGIN TRANSACTION;
-    
-    -- Check if the result exists
-    IF EXISTS (SELECT 1 FROM Result WHERE athlete_id = @athlete_id AND event_id = @event_id)
-    BEGIN
-        -- Delete the result
-        DELETE FROM Result WHERE athlete_id = @athlete_id AND event_id = @event_id;
-        
-        PRINT 'Result deleted successfully.';
-    END
-    ELSE
-    BEGIN
-        PRINT 'Result does not exist for the specified athlete and event.';
-    END
-    
-    COMMIT TRANSACTION;
+    SET NOCOUNT ON;
+
+    BEGIN TRANSACTION; -- Start transaction
+
+        -- Check if the athlete exists
+        IF NOT EXISTS (SELECT 1 FROM Athlete WHERE ID = @AthleteID)
+        BEGIN
+            SET @output_message = 'Error: Athlete ID does not exist.';
+            ROLLBACK TRANSACTION; -- Rollback transaction because of invalid ID
+            RETURN;
+        END
+
+        -- Delete athlete's results
+        DELETE FROM Result
+        WHERE athlete_id = @AthleteID;
+
+        -- Delete athlete's personal record
+        DELETE FROM Personal_Best
+        WHERE athlete_id = @AthleteID;
+
+        -- Delete athlete from Athlete table
+        DELETE FROM Athlete
+        WHERE ID = @AthleteID;
+
+        -- If all operations are successful, commit the transaction
+        COMMIT TRANSACTION;
+        SET @output_message = 'Athlete and associated records deleted successfully.';
 END;
+
