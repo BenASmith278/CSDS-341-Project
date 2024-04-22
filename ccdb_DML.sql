@@ -156,7 +156,7 @@ END;
 
 -- calculate the score for an event and school
 GO
-CREATE PROCEDURE CalculateScore
+CREATE OR ALTER PROCEDURE CalculateScore
 	@event_id INT,
 	@school_id INT,
 	@score INT OUTPUT
@@ -179,13 +179,11 @@ BEGIN
 	ELSE
 	BEGIN
         -- check if score has already been calculated
-   	    DECLARE @existingScore INT;
     	DECLARE @rowCount INT;
-    	SELECT @existingScore = score FROM Score WHERE event_id = @event_id AND school_id = @school_id;
 
-    	IF @existingScore IS NOT NULL
+    	IF EXISTS (SELECT score FROM Score WHERE event_id = @event_id AND school_id = @school_id)
     	BEGIN
-        	SET @score = @existingScore;
+        	SELECT @score = score FROM Score WHERE event_id = @event_id AND school_id = @school_id;
    		    PRINT 'Score already exists';
    		    ROLLBACK TRANSACTION;
    		    RETURN;

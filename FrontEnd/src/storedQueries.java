@@ -4,83 +4,6 @@ import java.sql.*;
 
 public class storedQueries {
 
-    static public Connection conn = storedQueries.makeConnection(connectionURL.getConnectionString());
-
-    public static CallableStatement prepareCallableStatement(Connection connection, String sql) {
-        try (CallableStatement stmt = connection.prepareCall(sql);) {
-            return stmt;
-        } catch (SQLException e) {
-            System.out.println("Error preparing statement.");
-            e.printStackTrace();
-            return null;
-        }
-    }
-
-    public static Connection makeConnection(String connectionUrl) {
-        try {
-            Connection conn = DriverManager.getConnection(connectionUrl);
-            return conn;
-        } catch (SQLException e) {
-            System.out.println("Error connecting to database.");
-            e.printStackTrace();
-            return null;
-        }
-    }
-
-    public static ResultSet executeQuery(CallableStatement stmt, String[] inputs, storedQueries.SQLType[] inputTypes,
-            String[] outputs, storedQueries.SQLType[] outputTypes) {
-        try {
-            for (int i = 0; i < inputs.length; i++) {
-                switch (inputTypes[i]) {
-                    case INT:
-                        stmt.setInt(i + 1, Integer.parseInt(inputs[i]));
-                        break;
-                    case VARCHAR:
-                        stmt.setString(i + 1, inputs[i]);
-                        break;
-                    case DATE:
-                        stmt.setDate(i + 1, Date.valueOf(inputs[i]));
-                        break;
-                    case TIME:
-                        stmt.setTime(i + 1, Time.valueOf(inputs[i]));
-                        break;
-                    default:
-                        break;
-                }
-            }
-
-            for (int i = 0; i < outputs.length; i++) {
-                switch (outputTypes[i]) {
-                    case INT:
-                        stmt.registerOutParameter(inputs.length + i + 1, Types.INTEGER);
-                        break;
-                    case VARCHAR:
-                        stmt.registerOutParameter(inputs.length + i + 1, Types.VARCHAR);
-                        break;
-                    case DATE:
-                        stmt.registerOutParameter(inputs.length + i + 1, Types.DATE);
-                        break;
-                    case TIME:
-                        stmt.registerOutParameter(inputs.length + i + 1, Types.TIME);
-                        break;
-                    default:
-                        break;
-                }
-            }
-
-            ResultSet rs = stmt.executeQuery();
-            return rs;
-        } catch (SQLException e) {
-            System.out.println("Error executing query.");
-            e.printStackTrace();
-            return null;
-        }
-    }
-
-    public enum SQLType {
-        INT, VARCHAR, DATE, TIME
-    }
-
     public static void transferStudent(int athleteId, int schoolId) {
         try (Connection conn = DriverManager.getConnection(connectionURL.getConnectionString())) {
             conn.setAutoCommit(false); // Disable auto-commit for transaction management
@@ -236,8 +159,8 @@ public class storedQueries {
 
             try (CallableStatement find = conn.prepareCall(findSchools);
                     CallableStatement scores = conn.prepareCall(getAllScores);) {
-                int max = 0;
-                String winner = "";
+                int min = Integer.MAX_VALUE;
+                int winner = 0;
                 // Set the parameters for the stored procedures
                 find.setInt(1, eventId);
                 ResultSet schools = find.executeQuery();
@@ -249,18 +172,18 @@ public class storedQueries {
                 scores.setInt(1, eventId);
                 ResultSet results = scores.executeQuery();
                 while (results.next()) {
-                    String schoolName = results.getString("SchoolName");
-                    int score = results.getInt("Score");
-                    if (score > max) {
-                        max = score;
-                        winner = schoolName;
+                    int schoolId = results.getInt(1);
+                    int score = results.getInt(2);
+                    if (score < min) {
+                        min = score;
+                        winner = schoolId;
                     }
 
-                    System.out.println("School: " + schoolName + ", Score: " + score);
+                    System.out.println("School: " + schoolId + ", Score: " + score);
                 }
 
-                if (max > 0) {
-                    System.out.println("The winner is: " + winner + " with " + max + " points");
+                if (min > 14) {
+                    System.out.println("The winner is: " + winner + " with " + min + " points");
                 } else {
                     System.out.println("No scoring schools in the event.");
                 }
@@ -279,7 +202,8 @@ public class storedQueries {
         // SQL query to call the stored procedure
         String sql = "{CALL CalculateScore(?, ?, ?)}";
 
-        try (CallableStatement stmt = prepareCallableStatement(conn, sql)) {
+        try (Connection conn = DriverManager.getConnection(connectionURL.getConnectionString());
+            CallableStatement stmt = conn.prepareCall(sql);) {
             // Set the parameters for the stored procedure
             stmt.setInt(1, eventId);
             stmt.setInt(2, schoolId);
