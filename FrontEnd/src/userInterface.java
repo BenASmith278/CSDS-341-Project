@@ -6,7 +6,6 @@ public class userInterface {
     public static void main(String[] args) {
         int athleteId;
         int raceId;
-        int meetId;
         String timeString;
         int place;
         int eventId;
@@ -55,11 +54,9 @@ public class userInterface {
                     storedQueries.findTopPerformers(season, raceId, rows);
                     break;
                 case 4:
-                    System.out.println("Provide Race ID: ");
-                    raceId = sc.nextInt();
-                    System.out.println("\nProvide Meet ID: ");
-                    meetId = sc.nextInt();
-                    storedQueries.calRaceResult(raceId, meetId);
+                    System.out.println("Provide Event ID: ");
+                    eventId = sc.nextInt();
+                    storedQueries.calRaceResult(eventId);
                     break;
                 case 5:
                     System.out.println("Provide Host School ID: ");
@@ -96,8 +93,8 @@ public class userInterface {
                     break;
                 default:
                     System.out.println("Invalid choice. Please enter a number between 1 and 7");
+                sc.close();
             }
-            sc.close();
         } catch (Exception e) {
             e.printStackTrace();
         }
