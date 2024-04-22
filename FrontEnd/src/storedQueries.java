@@ -287,16 +287,15 @@ public class storedQueries {
         }
     }
 
-    public static void deleteResult(int athleteId, int eventId) {
+    public static void deleteResult(int athleteId) {
         // SQL query to call the stored procedure
-        String sql = "{CALL DeleteResult(?, ?)}";
+        String sql = "{CALL DeleteAthleteAndResults(?)}";
 
         try {
             CallableStatement stmt = prepareCallableStatement(conn, sql);
 
             // Set the parameters for the stored procedure
             stmt.setInt(1, athleteId);
-            stmt.setInt(2, eventId);
 
             // Execute the stored procedure
             stmt.execute();
