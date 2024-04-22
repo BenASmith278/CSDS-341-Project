@@ -194,40 +194,34 @@ public class storedQueries {
     }
 
     public static void findTopPerformers(int season, int raceId, int rows) {
-        // SQL query to call the stored procedure
         String sql = "{CALL FindTopPerformers(?, ?, ?)}";
 
-        try {
-            CallableStatement stmt = prepareCallableStatement(conn, sql);
+        try (Connection conn = DriverManager.getConnection(connectionURL.getConnectionString());
+                CallableStatement cstmt = conn.prepareCall(sql)) {
+
             // Set the parameters for the stored procedure
-            stmt.setInt(1, season);
-            stmt.setInt(2, raceId);
-            stmt.setInt(3, rows);
+            cstmt.setInt(1, season);
+            cstmt.setInt(2, raceId);
+            cstmt.setInt(3, rows);
 
             // Execute the stored procedure
-            boolean hasResults = stmt.execute();
+            boolean hasResults = cstmt.execute();
 
-            // Check if there are results
-            do {
-                if (hasResults) {
-                    try (ResultSet rs = stmt.getResultSet()) {
-                        while (rs.next()) {
-                            String performerName = rs.getString(1); // Concatenated first and last name
-                            Time time = rs.getTime(2); // Result time
-                            System.out.println("Performer: " + performerName + ", Time: " + time);
-                        }
-                    }
-                } else {
-                    int updateCount = stmt.getUpdateCount();
-                    if (updateCount == -1) {
-                        // No more results
-                        break;
+            // Process the results
+            if (hasResults) {
+                try (ResultSet rs = cstmt.getResultSet()) {
+                    while (rs.next()) {
+                        String name = rs.getString("name");
+                        Time time = rs.getTime("time");
+                        System.out.printf("%s, Time: %s%n", name, time.toString());
                     }
                 }
-                hasResults = stmt.getMoreResults();
-            } while (true);
+            } else {
+                System.out.println("No results returned.");
+            }
 
         } catch (SQLException e) {
+            System.out.println("Database error: " + e.getMessage());
             e.printStackTrace();
         }
     }
