@@ -169,6 +169,30 @@ public class storedQueries {
         }
     }
 
+    public static void deleteAthleteAndResults(int athleteId) {
+        String sql = "{CALL DeleteAthleteAndResults(?, ?)}";
+
+        try (Connection conn = DriverManager.getConnection(connectionURL.getConnectionString());
+                CallableStatement cstmt = conn.prepareCall(sql)) {
+
+            // Set the input parameter for the stored procedure
+            cstmt.setInt(1, athleteId);
+            // Register the output parameter
+            cstmt.registerOutParameter(2, Types.NVARCHAR);
+
+            // Execute the stored procedure
+            cstmt.execute();
+
+            // Get the output message
+            String outputMessage = cstmt.getString(2);
+            System.out.println(outputMessage);
+
+        } catch (SQLException e) {
+            System.out.println("Database error: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
     public static void findTopPerformers(int season, int raceId, int rows) {
         // SQL query to call the stored procedure
         String sql = "{CALL FindTopPerformers(?, ?, ?)}";
@@ -256,55 +280,6 @@ public class storedQueries {
             System.out.println("Score: " + score);
 
         } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public static void topKPerformers(int season, int raceId, int k) {
-        // SQL query to call the stored procedure
-        String sql = "{CALL FindTopPerformers(?, ?, ?)}";
-
-        try {
-            CallableStatement stmt = prepareCallableStatement(conn, sql);
-
-            // Set the parameters for the stored procedure
-            stmt.setInt(1, season);
-            stmt.setInt(2, raceId);
-            stmt.setInt(3, k);
-
-            // Execute the stored procedure
-            ResultSet rs = stmt.executeQuery();
-
-            // Process the result set
-            while (rs.next()) {
-                String athleteName = rs.getString("AthleteName");
-                Time resultTime = rs.getTime("ResultTime");
-                System.out.println("Athlete: " + athleteName + ", Time: " + resultTime);
-            }
-
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public static void deleteResult(int athleteId, int eventId) {
-        // SQL query to call the stored procedure
-        String sql = "{CALL DeleteResult(?, ?)}";
-
-        try {
-            CallableStatement stmt = prepareCallableStatement(conn, sql);
-
-            // Set the parameters for the stored procedure
-            stmt.setInt(1, athleteId);
-            stmt.setInt(2, eventId);
-
-            // Execute the stored procedure
-            stmt.execute();
-
-            System.out.println("Result deleted successfully.");
-
-        } catch (SQLException e) {
-            System.out.println("Error deleting result.");
             e.printStackTrace();
         }
     }
