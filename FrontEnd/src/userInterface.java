@@ -69,7 +69,7 @@ public class userInterface {
                         System.out.println("\nProvide Start Date (yyyy-[m]m-[d]d): ");
                         String tempDate = sc.next();
                         Date startDate = Date.valueOf(tempDate);
-                        System.out.println("\nProvide Start Time: ");
+                        System.out.println("\nProvide Start Time (hh:mm:ss): ");
                         String tempTime = sc.next();
                         Time startTime = Time.valueOf(tempTime);
                         System.out.println(
