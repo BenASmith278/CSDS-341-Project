@@ -140,133 +140,131 @@ BEGIN
 END;
 GO
 
--- Find schools in an event stored procedure
+-- find all schools in an event
 GO
-CREATE OR ALTER PROCEDURE FindSchoolsInEvent
-	@event_id INT
-AS
-BEGIN
-	SELECT DISTINCT s.id, s.name
-	FROM Event e
-	INNER JOIN Meet m ON e.meet_id = m.id
-	INNER JOIN School_Meet sm ON sm.meet_id = m.id
-	INNER JOIN School s ON s.id = sm.school_id
-	WHERE e.event_id = @event_id;
-END;
-GO
-
--- Calculate score stored procedure
-GO
-CREATE OR ALTER PROCEDURE CalculateScore
-    @event_id INT,
-    @school_id INT,
-    @score INT OUTPUT
-AS
-BEGIN
-    BEGIN TRANSACTION;
-
-    -- Check meet status
-    DECLARE @status VARCHAR(50);
-    SELECT @status = m.status FROM Event e
-	INNER JOIN Meet m ON e.meet_id = m.id
-	WHERE e.event_id = @event_id;
-    
-    IF @status != 'completed'
-    BEGIN
-        ROLLBACK TRANSACTION;
-        PRINT 'Cannot calculate score of an unfinished race.';
-        RETURN;
-    END;
-    ELSE
-    BEGIN
-        -- check if score has already been calculated
-		DECLARE @existingScore INT;
-        DECLARE @rowCount INT;
-        SELECT @existingScore = score FROM Score WHERE event_id = @event_id AND school_id = @school_id;
-
-        IF @existingScore IS NOT NULL
-        BEGIN
-            SET @score = @existingScore;
-			PRINT 'Score already exists';
-			ROLLBACK TRANSACTION;
-			RETURN;
-        END;
-
-        -- calculate score
-        ELSE
-        BEGIN
-            -- set score null if less than 5 athletes finish
-			WITH finishers (place) AS (
-                -- get top five results for the event and school
-                SELECT r.place
-                FROM Result r
-                INNER JOIN Athlete a ON r.athlete_id = a.id
-                INNER JOIN School s ON a.school_id = s.id
-                WHERE r.event_id = @event_id AND s.id = @school_id
-			)
-            SELECT @rowCount = COUNT(*) 
-			FROM finishers
-
-            IF @rowCount < 5
-                SET @score = null;
-            ELSE
-				WITH topFiveScores (place) AS (
-					-- get top five results for the event and school
-					SELECT TOP(5) r.place
-					FROM Result r
-					INNER JOIN Athlete a ON r.athlete_id = a.id
-					INNER JOIN School s ON a.school_id = s.id
-					WHERE r.event_id = @event_id AND s.id = @school_id
-					ORDER BY r.time ASC
-				)
-                SELECT @score = SUM(place)
-                FROM topFiveScores;
-
-            -- insert new row to scores table with calculated score
-            INSERT INTO Score(event_id, school_id, score)
-            VALUES (@event_id, @school_id, @score);
-			COMMIT TRANSACTION;
-        END;
-	END;
-END;
-
--- Get scores stored procedure
-GO
-CREATE OR ALTER PROCEDURE GetScores
+CREATE PROCEDURE FindSchoolsInEvent
     @event_id INT
 AS
 BEGIN
-    SELECT s.school_id, s.score
-    FROM Score s
-    WHERE s.event_id = @event_id;
+    SELECT DISTINCT s.id, s.name
+    FROM Event e
+    INNER JOIN Meet m ON e.meet_id = m.id
+    INNER JOIN School_Meet sm ON sm.meet_id = m.id
+    INNER JOIN School s ON s.id = sm.school_id
+    WHERE e.event_id = @event_id;
 END;
 
--- Find top performers stored procedure
+-- calculate the score for an event and school
+GO
+CREATE PROCEDURE CalculateScore
+	@event_id INT,
+	@school_id INT,
+	@score INT OUTPUT
+AS
+BEGIN
+	BEGIN TRANSACTION;
+
+	-- Check meet status
+	DECLARE @status VARCHAR(50);
+	SELECT @status = m.status FROM Event e
+    INNER JOIN Meet m ON e.meet_id = m.id
+    WHERE e.event_id = @event_id;
+    
+	IF @status != 'completed'
+	BEGIN
+    	ROLLBACK TRANSACTION;
+    	PRINT 'Cannot calculate score of an unfinished race.';
+    	RETURN;
+	END;
+	ELSE
+	BEGIN
+        -- check if score has already been calculated
+   	    DECLARE @existingScore INT;
+    	DECLARE @rowCount INT;
+    	SELECT @existingScore = score FROM Score WHERE event_id = @event_id AND school_id = @school_id;
+
+    	IF @existingScore IS NOT NULL
+    	BEGIN
+        	SET @score = @existingScore;
+   		    PRINT 'Score already exists';
+   		    ROLLBACK TRANSACTION;
+   		    RETURN;
+    	END;
+
+    	-- calculate score
+    	ELSE
+    	BEGIN
+            -- set score null if less than 5 athletes finish
+   		    WITH finishers (place) AS (
+            	-- get top five results for the event and school
+            	SELECT r.place
+            	FROM Result r
+            	INNER JOIN Athlete a ON r.athlete_id = a.id
+            	INNER JOIN School s ON a.school_id = s.id
+            	WHERE r.event_id = @event_id AND s.id = @school_id
+   		)
+        	SELECT @rowCount = COUNT(*)
+   		FROM finishers
+
+        	IF @rowCount < 5
+            	SET @score = null;
+        	ELSE
+   			WITH topFiveScores (place) AS (
+   				-- get top five results for the event and school
+   				SELECT TOP(5) r.place
+   				FROM Result r
+   				INNER JOIN Athlete a ON r.athlete_id = a.id
+   				INNER JOIN School s ON a.school_id = s.id
+   				WHERE r.event_id = @event_id AND s.id = @school_id
+   				ORDER BY r.time ASC
+   			)
+            	SELECT @score = SUM(place)
+            	FROM topFiveScores;
+
+        	-- insert new row to scores table with calculated score
+        	INSERT INTO Score(event_id, school_id, score)
+        	VALUES (@event_id, @school_id, @score);
+   		    COMMIT TRANSACTION;
+    	END;
+    END;
+END;
+
+-- get all scores for an event
+GO
+CREATE PROCEDURE GetScores
+	@event_id INT
+AS
+BEGIN
+	SELECT s.school_id, s.score
+	FROM Score s
+	WHERE s.event_id = @event_id;
+END;
+
+-- find top performers for a season
 GO
 CREATE OR ALTER PROCEDURE FindTopPerformers
-    @season VARCHAR(255), 
+    @season INT,
     @race_id INT,
     @rows INT
 AS
 BEGIN
-    SELECT TOP (@rows) 
-        CONCAT(a.fname, ' ', a.lname) AS AthleteName,
-        res.time AS ResultTime
-    FROM 
-        Meet m
-    INNER JOIN 
-        Event e ON m.id = e.meet_id
-    INNER JOIN 
-        Result res ON res.event_id = e.event_id
-    INNER JOIN 
-        Athlete a ON res.athlete_id = a.id
-    WHERE 
-        m.season = @season 
-        AND e.race_id = @race_id
-    ORDER BY 
-        res.time ASC;
+    BEGIN TRANSACTION;
+        IF NOT EXISTS (SELECT 1 FROM Race WHERE id = @race_id)
+        BEGIN
+            PRINT 'Invalid Race ID';
+            ROLLBACK TRANSACTION;
+            RETURN;
+        END;
+
+        SELECT TOP(@rows) CONCAT(a.lname, ', ', a.fname) as name, res.time
+        FROM Meet m
+        INNER JOIN Event e ON m.id = e.meet_id
+        INNER JOIN Result res ON res.event_id = e.event_id
+        INNER JOIN Athlete a ON a.id = res.athlete_id
+        WHERE m.season = @season AND e.race_id = @race_id
+        ORDER BY res.time ASC;
+    COMMIT TRANSACTION;
 END;
-GO
 
 -- Create meet stored procedure
 GO
