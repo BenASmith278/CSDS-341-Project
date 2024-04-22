@@ -277,5 +277,4 @@ public class storedQueries {
             e.printStackTrace();
         }
     }
-
 }
